@@ -1,48 +1,71 @@
 # Joke_Agent
 
-Make llm funny (or else)
+Agentic workflow for generating and filtering New Yorker-style cartoon captions.
 
-We want to make an Agentic workflow for the LLM to 
+## Motivation
+Given a cartoon description, generate captions that are not just wordplay noise:
+- identify the two core incongruous elements
+- explore diverse idea space around each element
+- bridge one element's ideas into the other
+- filter down to strong finalists
 
-# LLM Workflow
-Inputs: 
-- Cartoon Description
-- Winning caption
+## Pipeline
+1. `cartoon_workflow.py`
+- Input: `comprehensive_annotations.csv`
+- Output: `results/elements_*cartoons_*.json`
+- Purpose: extract elements + brainstorm idea lists for each element.
 
-## Element Extraction Phase
-- Extract Elements of the cartoon
-    - Think, "Main incongruous elements that make the cartoon interesting"
-    - These will be the "root" of searching related concepts
-    - Example: 
-        - Description: A group of adults dressed in business attire are seated around a table in a meeting. However, the scene is inside of a bus or subway car, with handles and windows. The person at the head of the table is speaking.
-        - Elements: 
-            - Business Meeting
-            - Public Transportation
-    - Prompt: 
+2. `directional_caption_pairs.py`
+- Input: one contest/cartoon from `results/*.json`
+- Output: `captions/directional_contest_*/directional_captions.csv` + `summary.json`
+- Purpose: generate directional captions.
+- Modes:
+  - idea mode (default): use brainstorm ideas
+  - premise mode (`--use-premises`): first generate diverse joke premises, then caption
 
+3. `filter_directional.py`
+- Input: one `directional_captions.csv`
+- Output: `filtered_*.json` (or `filtered_seeded_*.json`)
+- Purpose: ask a judge model for top-k captions.
 
-## Brainstorming Phase
-- For each Element, brainstorm related *things* that are diverse and creative
-    - This is where most tokens will get spent?
-    - We want to make this process diverse. Here's the approach:
-        - We will build the list of *things* 10 at a time, rotating which LLM is generating them
-        - The prompt should look like, "Heres the ones we have so far, [list_of_things], make 10 new, DIFFERENT ones and append them . Emphasis on creativity and diversity, do not repeat any of the ones we have so far."
+4. Optional evaluation helpers
+- `seed_winner.py`: insert ground-truth winner row into generated CSV
+- `compare_filtered.py`: compare multiple filtered outputs and produce agreement heatmap + consensus
+- `evaluate_brainstorm.py`: embedding-based idea-vs-winner analysis
+- `pairwise_similarity.py`: pairwise similarity matrix between element idea sets
 
-- LLM list (in this order, 10 at a time)
-    anthropic/claude-3.5-sonnet
-    anthropic/claude-sonnet-4.5
-    anthropic/claude-opus-4.1
-    openai/gpt-4o
-    google/gemini-2.5-pro
-    z-ai/glm-4.6
-    moonshotai/kimi-k2
-    openai/gpt-5
-    x-ai/grok-4
-    openai/gpt-4.5-preview
+## Quick Start (Single Contest, Low Cost)
+```bash
+cd /Users/reuben/Desktop/Joke_Agent
 
+# 0) Generate elements/ideas for 1 cartoon (if you need fresh results)
+python cartoon_workflow.py --count 1 --model openai/gpt-4o-mini --brainstorm-total 20 --brainstorm-batch 5
 
-## Evaluation 
-- Eval Metric:
-    - Giiven a winnig caption, is there a generated caption that plays on the same joke/idea?
-    - Do this with our embeddding class
-    - # caption_init
+# 1) Directional caption generation (cheap run)
+python directional_caption_pairs.py \
+  --results results/elements_1cartoons_20251016-144553.json \
+  --contest 2.0 \
+  --model openai/gpt-4o-mini \
+  --use-premises \
+  --premise-count 4 \
+  --skip-similarity \
+  --n-workers 2
+
+# 2) Filter finalists
+RUN_DIR=$(ls -dt captions/directional_contest_* | head -n 1)
+python filter_directional.py "$RUN_DIR/directional_captions.csv" \
+  --model openai/gpt-4o-mini \
+  --top-k 3
+```
+
+## Batch Scripts
+- `bulk_caption_pipeline.sh`: full end-to-end batch over multiple models/contests
+- `resume_caption_pipeline.sh`: resume from a pinned results file
+- `filter_recent_directional.sh`: re-filter recent directional runs
+
+## Notes
+- `element_extractor.py` is a legacy one-step extractor kept for reference.
+- API keys are read from `.env`:
+  - `OPENROUTER_API_KEY`
+  - `OPENAI_API_KEY` (for embedding-based similarity)
+  - `GEMINI_API_KEY` (only for `embedding.py`)

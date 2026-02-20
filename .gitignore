@@ -1,0 +1,23 @@
+# Secrets
+.env
+*.env
+
+# Python cache/build
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# OS/editor noise
+.DS_Store
+
+# Generated experiment artifacts
+captions/
+results/
+evaluation/
+pairwise/
+
+# Large archives / local data artifacts
+*.zip
+*.pkl
